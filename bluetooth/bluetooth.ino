@@ -29,6 +29,9 @@ int defaultOnColor[3] = {255, 255, 255};
 int defaultOffColor[3] = {0, 0, 0};
 float colorDeltas[3] = {0, 0, 0};
 
+int inTimer[2] = {0, 0}; // Time in millis of on or off
+int atTimer[4] = {0, 0, 10, 0}; // Hour, minute, second, on/off
+
 /* Helper Functions */
 
 boolean arraysEqual(int first[], int second[]) {
@@ -47,7 +50,31 @@ void setArray(int array[], int a, int b, int c) {
   array[2] = c;
 }
 
+void checkTimers() {
+  if (inTimer[0] == updateIntervalInMillis) {
+    crossFade(defaultOffColor[0], defaultOffColor[1], defaultOffColor[2]);
+  } 
+  if (inTimer[1] == updateIntervalInMillis) {
+    crossFade(defaultOnColor[0], defaultOnColor[1], defaultOnColor[2]);
+  } 
+  if (inTimer[0] > 0) inTimer[0] -= updateIntervalInMillis;
+  if (inTimer[1] > 0) inTimer[1] -= updateIntervalInMillis;
+
+//  if (Time.second() % atTimer[3] == 0) {
+//    if (atTimer[4] == 0) {
+//      crossFade(defaultOffColor[0], defaultOffColor[1], defaultOffColor[2]);
+//    } else {
+//      crossFade(defaultOnColor[0], defaultOnColor[1], defaultOnColor[2]);
+//    }
+//  }
+}
+
+/**
+ * Updates color based on deltas if target is different from current
+ */
 void updateColor() {
+  checkTimers();
+  
   if (!arraysEqual(targetColor, currentColor)) {
     Serial.print("Target r: ");
     Serial.print(targetColor[0]);
@@ -71,6 +98,9 @@ void updateColor() {
   }
 }
 
+/**
+ * Sets target color and the deltas to change the color
+ */
 void crossFade(int r, int g, int b) {
   setArray(targetColor, r, g, b);
   colorDeltas[0] = (targetColor[0] - currentColor[0])/numIntervalsPerSec;
@@ -84,6 +114,10 @@ bool lightOn() {
   return currentColor[0] > 0 || currentColor[1] > 0 || currentColor[2] > 0;
 }
 
+/**
+ * After the 300 millis interval, check if button is still down
+ * If button is now up, set target color to opposite of current
+ */
 void recheckButton() {
   if (digitalRead(BUTTON_PIN) == 0) {
     // Still down
@@ -101,7 +135,7 @@ void recheckButton() {
 
 Timer buttonChecker(300, recheckButton, true);
 
-// Interrupt handler for when the button is changed
+// Interrupt handler for when the button is pressed down
 void buttonChanged() {
   buttonChecker.startFromISR();
 }
@@ -179,8 +213,6 @@ void defaultColorCallback(BLERecipient recipient, BLECharacteristicCallbackReaso
   }
 }
 
-int inTimer[2] = {-50, 0}; // First is time in millis, second is 0 | 1 for off | on
-
 /**
  * Used to read and set the "in" timer time and value
  */
@@ -191,19 +223,14 @@ void changeInCallback(BLERecipient recipient, BLECharacteristicCallbackReason re
     byte value[20];
     int bytes = changeInCharacteristic.getValue(value, 20);
     if (bytes >= 2) {
-      inTimer[0] = value[0];
-      inTimer[1] = value[1];
-    } else {
-      byte newValues[2] = {inTimer[0], inTimer[1]};
-      changeInCharacteristic.setValue(newValues, 2); 
+      if (value[0] <= 1 && value[1] >= 0) {
+        inTimer[value[0]] = value[1]*1000;
+      }
     }
-  } else if (reason == PREREAD) {
-    byte newValues[2] = {inTimer[0], inTimer[1]};
-    changeInCharacteristic.setValue(newValues, 2); 
-  }
+  } 
+  byte newValues[2] = {inTimer[0], inTimer[1]};
+  changeInCharacteristic.setValue(newValues, 2); 
 }
-
-int atTimer[4] = {0, 0, 0, 0}; // Hour, minute, second, on/off
 
 /**
  * Used to read and set the "at" timer time and value
@@ -221,11 +248,11 @@ void changeAtCallback(BLERecipient recipient, BLECharacteristicCallbackReason re
       atTimer[3] = value[3];
     } else {
       byte newValues[4] = {atTimer[0], atTimer[1], atTimer[2], atTimer[3]};
-      changeInCharacteristic.setValue(newValues, 4); 
+      changeAtCharacteristic.setValue(newValues, 4); 
     }
   } else if (reason == PREREAD) {
     byte newValues[4] = {atTimer[0], atTimer[1], atTimer[2], atTimer[3]};
-    changeInCharacteristic.setValue(newValues, 4); 
+    changeAtCharacteristic.setValue(newValues, 4); 
   }
 }
 
@@ -248,7 +275,7 @@ void setup() {
  defaultColorCharacteristic.setCallback(defaultColorCallback);
  lightService.addCharacteristic(defaultColorCharacteristic);
  
- byte initChangeInValue[2] = {-50, 0};  // Negative time, off change
+ byte initChangeInValue[2] = {0, 0};  // Negative time, off change
  changeInCharacteristic.setValue(initChangeInValue, 2);
  changeInCharacteristic.setCallback(changeInCallback);
  lightService.addCharacteristic(changeInCharacteristic);
@@ -264,16 +291,23 @@ void setup() {
  DuoBLE.begin();
  DuoBLE.advertisingDataAddName(ADVERTISEMENT, deviceName);
  DuoBLE.setName(deviceName);
+ 
  // Start advertising.
  DuoBLE.startAdvertising();
  Serial.println("BLE start advertising.");
- 
+
+ /* Set initial led light */
  RGB.control(true);
  RGB.color(defaultOnColor[0], defaultOnColor[1], defaultOnColor[2]);
- 
+
+ /* Start Button */
  pinMode(BUTTON_PIN, INPUT_PULLUP);
  attachInterrupt(BUTTON_PIN, buttonChanged, FALLING);
-  
+
+ /* Set Standard Time */
+ Time.setTime(1491772044);
+
+ /* Start the color updater */
  updateColors.start();
 }
 
