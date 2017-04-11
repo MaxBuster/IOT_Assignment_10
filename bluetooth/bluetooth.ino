@@ -30,7 +30,10 @@ int defaultOffColor[3] = {0, 0, 0};
 float colorDeltas[3] = {0, 0, 0};
 
 int inTimer[2] = {0, 0}; // Time in millis of on or off
-int atTimer[4] = {0, 0, 10, 0}; // Hour, minute, second, on/off
+int atTimer[][3] = {
+  {0, 0, 0}, // Off at hours, minutes, seconds
+  {0, 0, 0} // On at hours, minutes, seconds
+};
 
 /* Helper Functions */
 
@@ -50,31 +53,37 @@ void setArray(int array[], int a, int b, int c) {
   array[2] = c;
 }
 
+bool zeroArray(int array[]) {
+  return array[0] == 0 && array[1] == 0 && array[2] == 0;
+}
+
 void checkTimers() {
-  if (inTimer[0] == updateIntervalInMillis) {
+  int oneSecondInMillis = 1000;
+  if (inTimer[0] == oneSecondInMillis) {
     crossFade(defaultOffColor[0], defaultOffColor[1], defaultOffColor[2]);
   } 
-  if (inTimer[1] == updateIntervalInMillis) {
+  if (inTimer[1] == oneSecondInMillis) {
     crossFade(defaultOnColor[0], defaultOnColor[1], defaultOnColor[2]);
   } 
-  if (inTimer[0] > 0) inTimer[0] -= updateIntervalInMillis;
-  if (inTimer[1] > 0) inTimer[1] -= updateIntervalInMillis;
+  if (inTimer[0] > 0) inTimer[0] -= oneSecondInMillis;
+  if (inTimer[1] > 0) inTimer[1] -= oneSecondInMillis;
 
-//  if (Time.second() % atTimer[3] == 0) {
-//    if (atTimer[4] == 0) {
-//      crossFade(defaultOffColor[0], defaultOffColor[1], defaultOffColor[2]);
-//    } else {
-//      crossFade(defaultOnColor[0], defaultOnColor[1], defaultOnColor[2]);
-//    }
-//  }
+  if (!zeroArray(atTimer[0])) {
+    if (Time.hour() == atTimer[0][0] && Time.minute() == atTimer[0][1] && Time.second() % atTimer[0][2] == 0) {
+      crossFade(defaultOffColor[0], defaultOffColor[1], defaultOffColor[2]);
+    }
+  }
+  if (!zeroArray(atTimer[1])) {
+    if (Time.hour() == atTimer[1][0] && Time.minute() == atTimer[1][1] && Time.second() % atTimer[1][2] == 0) {
+      crossFade(defaultOnColor[0], defaultOnColor[1], defaultOnColor[2]);
+    }
+  }
 }
 
 /**
  * Updates color based on deltas if target is different from current
  */
 void updateColor() {
-  checkTimers();
-  
   if (!arraysEqual(targetColor, currentColor)) {
     Serial.print("Target r: ");
     Serial.print(targetColor[0]);
@@ -242,17 +251,17 @@ void changeAtCallback(BLERecipient recipient, BLECharacteristicCallbackReason re
     byte value[20];
     int bytes = changeAtCharacteristic.getValue(value, 20);
     if (bytes >= 4) {
-      atTimer[0] = value[0];
-      atTimer[1] = value[1];
-      atTimer[2] = value[2];
-      atTimer[3] = value[3];
-    } else {
-      byte newValues[4] = {atTimer[0], atTimer[1], atTimer[2], atTimer[3]};
-      changeAtCharacteristic.setValue(newValues, 4); 
-    }
+      if (value[0] <= 1) {
+        atTimer[value[0]][0] = value[1];
+        atTimer[value[0]][1] = value[2];
+        atTimer[value[0]][2] = value[3];
+      }
+    } 
+    byte newValues[6] = {atTimer[0][0], atTimer[0][1], atTimer[0][2], atTimer[1][0], atTimer[1][1], atTimer[1][2]};
+    changeAtCharacteristic.setValue(newValues, 6); 
   } else if (reason == PREREAD) {
-    byte newValues[4] = {atTimer[0], atTimer[1], atTimer[2], atTimer[3]};
-    changeAtCharacteristic.setValue(newValues, 4); 
+    byte newValues[6] = {atTimer[0][0], atTimer[0][1], atTimer[0][2], atTimer[1][0], atTimer[1][1], atTimer[1][2]};
+    changeAtCharacteristic.setValue(newValues, 6);
   }
 }
 
@@ -313,6 +322,7 @@ void setup() {
 
 void loop() {
   delay(1000);
+  checkTimers();
 }
 
 void BLE_connected() {
