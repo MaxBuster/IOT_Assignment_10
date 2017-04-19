@@ -1,5 +1,11 @@
 #include <DuoBLE.h>
 
+/**
+ * Built By:
+ *  Max Buster
+ *  Anna Gautier
+ */
+
 // Disable WiFi
 SYSTEM_MODE(MANUAL);
 
@@ -16,6 +22,9 @@ BLECharacteristic currentColorCharacteristic("FF02", ATT_PROPERTY_READ | ATT_PRO
 BLECharacteristic defaultColorCharacteristic("FF03", ATT_PROPERTY_READ | ATT_PROPERTY_WRITE);
 BLECharacteristic changeInCharacteristic("FF04", ATT_PROPERTY_READ | ATT_PROPERTY_WRITE);
 BLECharacteristic changeAtCharacteristic("FF05", ATT_PROPERTY_READ | ATT_PROPERTY_WRITE);
+BLECharacteristic timeCharacteristic("FF06", ATT_PROPERTY_READ | ATT_PROPERTY_WRITE);
+
+// TODO : get/set time
 
 /* Global Variables */
 
@@ -69,12 +78,12 @@ void checkTimers() {
   if (inTimer[1] > 0) inTimer[1] -= oneSecondInMillis;
 
   if (!zeroArray(atTimer[0])) {
-    if (Time.hour() == atTimer[0][0] && Time.minute() == atTimer[0][1] && Time.second() % atTimer[0][2] == 0) {
+    if (Time.hour() == atTimer[0][0] && Time.minute() == atTimer[0][1] && Time.second() == atTimer[0][2]) {
       crossFade(defaultOffColor[0], defaultOffColor[1], defaultOffColor[2]);
     }
   }
   if (!zeroArray(atTimer[1])) {
-    if (Time.hour() == atTimer[1][0] && Time.minute() == atTimer[1][1] && Time.second() % atTimer[1][2] == 0) {
+    if (Time.hour() == atTimer[1][0] && Time.minute() == atTimer[1][1] && Time.second() == atTimer[1][2]) {
       crossFade(defaultOnColor[0], defaultOnColor[1], defaultOnColor[2]);
     }
   }
@@ -234,10 +243,10 @@ void changeInCallback(BLERecipient recipient, BLECharacteristicCallbackReason re
     if (bytes >= 2) {
       if (value[0] <= 1 && value[1] >= 0) {
         inTimer[value[0]] = value[1]*1000;
-      }
+      } 
     }
   } 
-  byte newValues[2] = {inTimer[0], inTimer[1]};
+  byte newValues[2] = {inTimer[0]/1000, inTimer[1]/1000};
   changeInCharacteristic.setValue(newValues, 2); 
 }
 
@@ -255,13 +264,35 @@ void changeAtCallback(BLERecipient recipient, BLECharacteristicCallbackReason re
         atTimer[value[0]][0] = value[1];
         atTimer[value[0]][1] = value[2];
         atTimer[value[0]][2] = value[3];
-      }
+      } 
     } 
     byte newValues[6] = {atTimer[0][0], atTimer[0][1], atTimer[0][2], atTimer[1][0], atTimer[1][1], atTimer[1][2]};
     changeAtCharacteristic.setValue(newValues, 6); 
   } else if (reason == PREREAD) {
     byte newValues[6] = {atTimer[0][0], atTimer[0][1], atTimer[0][2], atTimer[1][0], atTimer[1][1], atTimer[1][2]};
     changeAtCharacteristic.setValue(newValues, 6);
+  }
+}
+
+/**
+ * Used to read and set the time value
+ */
+void timeCallback(BLERecipient recipient, BLECharacteristicCallbackReason reason) {
+  Serial.print("Time Characteristic; Reason: ");
+  Serial.println(reason);
+  if (reason == POSTWRITE) {
+    byte value[20];
+    int bytes = timeCharacteristic.getValue(value, 20);
+    if (bytes >= 4) {
+      unsigned int time = (value[0] << 24) | (value[1] << 16) | (value[2] << 8) | value[3];
+      Time.setTime(time);
+      Serial.println(Time.timeStr());
+    }  
+  } else if (reason == PREREAD) {
+    unsigned int currentTime = Time.now();
+    Serial.println(Time.timeStr());
+    byte newValues[4] = {currentTime >> 24, (currentTime >> 16) & 0xFF, (currentTime >> 8) & 0xFF, currentTime & 0xFF};
+    timeCharacteristic.setValue(newValues, 4); 
   }
 }
 
@@ -294,6 +325,11 @@ void setup() {
  changeAtCharacteristic.setCallback(changeAtCallback);
  lightService.addCharacteristic(changeAtCharacteristic);
  
+ byte initTimeValue[4] = {0, 0, 0, 0};  
+ timeCharacteristic.setValue(initTimeValue, 4);
+ timeCharacteristic.setCallback(timeCallback);
+ lightService.addCharacteristic(timeCharacteristic);
+ 
  // Add the Service
  DuoBLE.addService(lightService);
  
@@ -314,7 +350,7 @@ void setup() {
  attachInterrupt(BUTTON_PIN, buttonChanged, FALLING);
 
  /* Set Standard Time */
- Time.setTime(1491772044);
+ Time.setTime(1400647897);
 
  /* Start the color updater */
  updateColors.start();
